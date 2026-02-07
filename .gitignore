@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Models (Large files)
+*.h5
+*.keras
+*.SavedModel
+
+# Datasets
+Rice_Dataset/
+data/
+datasets/
+
+# Environment
+.env
+.venv
+env/
+venv/
+.DS_Store
