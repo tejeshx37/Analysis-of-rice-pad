@@ -1,189 +1,169 @@
-import tensorflow as tf
 import os
+import random
 import numpy as np
+import torch
+import torch.nn as nn
+from torchvision import datasets, transforms, models
+from torch.utils.data import DataLoader
+from sklearn.metrics import accuracy_score
 
-from sklearn.utils.class_weight import compute_class_weight
-from tensorflow.keras import mixed_precision
-from tensorflow.keras.applications import EfficientNetB0
-from tensorflow.keras.applications.efficientnet import preprocess_input
-from tensorflow.keras.layers import (
-    Dense, GlobalAveragePooling2D, Dropout,
-    RandomFlip, RandomRotation
-)
-from tensorflow.keras.models import Model, Sequential
-from tensorflow.keras.callbacks import (
-    ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
-)
+# ---------------------------
+# 1. Reproducibility
+# ---------------------------
+def set_seed(seed=42):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
 
-# ===============================
-# SPEED SETTINGS
-# ===============================
-mixed_precision.set_global_policy("mixed_float16")
+set_seed(42)
 
-IMG_SIZE = 192          # smaller = faster
-BATCH_SIZE = 64         # increase if memory allows
-EPOCHS_HEAD = 8         # classifier training
-EPOCHS_FINE = 5         # fine-tuning
-AUTOTUNE = tf.data.AUTOTUNE
+# ---------------------------
+# 2. Config
+# ---------------------------
+DATA_DIR = "/Users/mtejeshx37/Analysis-of-rice-pad/Rice_Dataset_Split"
+MODEL_SAVE_PATH = "best_resnet50_rice.pth"
 
-train_dir = "/Users/mtejeshx37/Analysis-of-rice-pad/Rice_Dataset/train"
-val_dir   = "/Users/mtejeshx37/Analysis-of-rice-pad/Rice_Dataset/val"
+BATCH_SIZE = 32
+EPOCHS = 25
+LR = 1e-4
+NUM_CLASSES = 20
 
-# ===============================
-# LOAD DATA (FAST)
-# ===============================
-print("Loading datasets...")
+# Apple Silicon (MPS) optimization for MacBook Air
+DEVICE = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+print("Using device:", DEVICE)
 
-train_ds = tf.keras.utils.image_dataset_from_directory(
-    train_dir,
-    image_size=(IMG_SIZE, IMG_SIZE),
-    batch_size=BATCH_SIZE,
-    label_mode="categorical",
-    shuffle=True,
-    seed=42
-)
-
-val_ds = tf.keras.utils.image_dataset_from_directory(
-    val_dir,
-    image_size=(IMG_SIZE, IMG_SIZE),
-    batch_size=BATCH_SIZE,
-    label_mode="categorical",
-    shuffle=False
-)
-
-class_names = train_ds.class_names
-NUM_CLASSES = len(class_names)
-print("Classes:", class_names)
-
-# ===============================
-# PREPROCESSING
-# ===============================
-def preprocess(image, label):
-    image = preprocess_input(image)
-    return image, label
-
-train_ds = train_ds.map(preprocess, num_parallel_calls=AUTOTUNE)
-val_ds   = val_ds.map(preprocess, num_parallel_calls=AUTOTUNE)
-
-train_ds = train_ds.shuffle(1000).prefetch(AUTOTUNE)
-val_ds   = val_ds.prefetch(AUTOTUNE)
-
-# ===============================
-# CLASS WEIGHTS (SAFE)
-# ===============================
-print("Computing class weights...")
-
-y_train = np.concatenate([
-    np.argmax(y.numpy(), axis=1)
-    for _, y in train_ds.unbatch().batch(1024)
+# ---------------------------
+# 3. Image Transforms
+# ---------------------------
+train_transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.RandomHorizontalFlip(),
+    transforms.RandomRotation(15),
+    transforms.ColorJitter(brightness=0.2, contrast=0.2),
+    transforms.ToTensor(),
+    transforms.Normalize(
+        mean=[0.485, 0.456, 0.406],
+        std=[0.229, 0.224, 0.225]
+    )
 ])
 
-class_weights = compute_class_weight(
-    class_weight="balanced",
-    classes=np.unique(y_train),
-    y=y_train
-)
-class_weights = dict(enumerate(class_weights))
-print("Class weights:", class_weights)
-
-# ===============================
-# MODEL
-# ===============================
-print("Building model...")
-
-data_augmentation = Sequential([
-    RandomFlip("horizontal"),
-    RandomRotation(0.1),
-], name="augmentation")
-
-base_model = EfficientNetB0(
-    weights="imagenet",
-    include_top=False,
-    input_shape=(IMG_SIZE, IMG_SIZE, 3)
-)
-base_model.trainable = False
-
-inputs = tf.keras.Input(shape=(IMG_SIZE, IMG_SIZE, 3))
-x = data_augmentation(inputs)
-x = base_model(x, training=False)
-x = GlobalAveragePooling2D()(x)
-x = Dropout(0.3)(x)
-
-# IMPORTANT: force float32 output for mixed precision
-outputs = Dense(NUM_CLASSES, activation="softmax", dtype="float32")(x)
-
-model = Model(inputs, outputs)
-
-model.compile(
-    optimizer=tf.keras.optimizers.Adam(1e-3),
-    loss="categorical_crossentropy",
-    metrics=["accuracy"]
-)
-
-model.summary()
-
-# ===============================
-# CALLBACKS
-# ===============================
-callbacks = [
-    ModelCheckpoint(
-        "rice_disease_best.keras",
-        monitor="val_accuracy",
-        save_best_only=True,
-        verbose=1
-    ),
-    EarlyStopping(
-        monitor="val_loss",
-        patience=3,
-        restore_best_weights=True,
-        verbose=1
-    ),
-    ReduceLROnPlateau(
-        monitor="val_loss",
-        factor=0.3,
-        patience=2,
-        min_lr=1e-6,
-        verbose=1
+val_test_transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    transforms.Normalize(
+        mean=[0.485, 0.456, 0.406],
+        std=[0.229, 0.224, 0.225]
     )
-]
+])
 
-# ===============================
-# PHASE 1 – TRAIN HEAD
-# ===============================
-print("\n🚀 Training classifier head...")
-history_head = model.fit(
-    train_ds,
-    validation_data=val_ds,
-    epochs=EPOCHS_HEAD,
-    class_weight=class_weights,
-    callbacks=callbacks
+# ---------------------------
+# 4. Datasets & Loaders
+# ---------------------------
+train_dataset = datasets.ImageFolder(
+    root=os.path.join(DATA_DIR, "train"),
+    transform=train_transform
 )
 
-# ===============================
-# PHASE 2 – FINE TUNING (FAST)
-# ===============================
-print("\n🔥 Fine-tuning last layers...")
-
-base_model.trainable = True
-for layer in base_model.layers[:-10]:
-    layer.trainable = False
-
-model.compile(
-    optimizer=tf.keras.optimizers.Adam(1e-5),
-    loss="categorical_crossentropy",
-    metrics=["accuracy"]
+val_dataset = datasets.ImageFolder(
+    root=os.path.join(DATA_DIR, "val"),
+    transform=val_test_transform
 )
 
-history_fine = model.fit(
-    train_ds,
-    validation_data=val_ds,
-    epochs=EPOCHS_FINE,
-    class_weight=class_weights,
-    callbacks=callbacks
+test_dataset = datasets.ImageFolder(
+    root=os.path.join(DATA_DIR, "test"),
+    transform=val_test_transform
 )
 
-# ===============================
-# SAVE FINAL MODEL
-# ===============================
-model.save("rice_disease_final_2.keras")
-print("\n✅ Training completed successfully!")
+train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
+val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
+test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
+
+print("Classes:", train_dataset.classes)
+
+# ---------------------------
+# 5. Model (ResNet50)
+# ---------------------------
+# Using the standard ResNet50 with pre-trained weights
+model = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
+
+# Freeze backbone initially
+for param in model.parameters():
+    param.requires_grad = False
+
+# Replace the fully connected layer for our 20 classes
+model.fc = nn.Linear(model.fc.in_features, NUM_CLASSES)
+model = model.to(DEVICE)
+
+# ---------------------------
+# 6. Loss & Optimizer
+# ---------------------------
+criterion = nn.CrossEntropyLoss()
+# Only train the newly added head
+optimizer = torch.optim.Adam(model.fc.parameters(), lr=LR)
+
+# ---------------------------
+# 7. Train & Validate
+# ---------------------------
+def train_one_epoch(model, loader):
+    model.train()
+    running_loss = 0
+
+    for images, labels in loader:
+        images, labels = images.to(DEVICE), labels.to(DEVICE)
+
+        optimizer.zero_grad()
+        outputs = model(images)
+        loss = criterion(outputs, labels)
+        loss.backward()
+        optimizer.step()
+
+        running_loss += loss.item()
+
+    return running_loss / len(loader)
+
+def evaluate(model, loader):
+    model.eval()
+    preds, targets = [], []
+
+    with torch.no_grad():
+        for images, labels in loader:
+            images = images.to(DEVICE)
+            outputs = model(images)
+            _, predicted = torch.max(outputs, 1)
+
+            preds.extend(predicted.cpu().numpy())
+            targets.extend(labels.numpy())
+
+    return accuracy_score(targets, preds)
+
+# ---------------------------
+# 8. Training Loop
+# ---------------------------
+best_val_acc = 0
+
+print("\nStarting Training...")
+for epoch in range(EPOCHS):
+    train_loss = train_one_epoch(model, train_loader)
+    val_acc = evaluate(model, val_loader)
+
+    print(
+        f"Epoch [{epoch+1}/{EPOCHS}] "
+        f"Train Loss: {train_loss:.4f} "
+        f"Val Accuracy: {val_acc:.4f}"
+    )
+
+    if val_acc > best_val_acc:
+        best_val_acc = val_acc
+        torch.save(model.state_dict(), MODEL_SAVE_PATH)
+
+print("\nBest Validation Accuracy:", best_val_acc)
+print("Model saved at:", MODEL_SAVE_PATH)
+
+# ---------------------------
+# 9. Final Test Accuracy
+# ---------------------------
+model.load_state_dict(torch.load(MODEL_SAVE_PATH))
+test_acc = evaluate(model, test_loader)
+print("Final Test Accuracy:", test_acc)
+

@@ -7,11 +7,14 @@ __pycache__/
 *.h5
 *.keras
 *.SavedModel
+*.pth
 
 # Datasets
 Rice_Dataset/
+Rice_Dataset_Split/
 data/
 datasets/
+*.zip
 
 # Environment
 .env
