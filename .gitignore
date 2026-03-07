@@ -7,7 +7,6 @@ __pycache__/
 *.h5
 *.keras
 *.SavedModel
-*.pth
 
 # Datasets
 Rice_Dataset/
