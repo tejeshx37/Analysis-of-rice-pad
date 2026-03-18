@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Rice Disease Detection System</title>
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="dashboard-container">
+        <header class="header">
+            <div class="logo">
+                <i class="fa-solid fa-leaf text-accent"></i>
+                <h1>AI Rice Disease Detection System</h1>
+            </div>
+            <p class="subtitle">A professional dashboard for researchers to upload or capture imagery for instant disease diagnosis.</p>
+            <a href="{{ url_for('logout') }}" class="logout-btn" title="Sign Out">
+                <i class="fa-solid fa-right-from-bracket"></i> Logout
+            </a>
+        </header>
+
+        <main class="main-content">
+            <!-- Left Column: Input Methods -->
+            <div class="input-panel panel-card">
+                <div class="tabs">
+                    <button class="tab-btn active" id="tab-upload"><i class="fa-solid fa-cloud-arrow-up"></i> Upload Image</button>
+                    <button class="tab-btn" id="tab-camera"><i class="fa-solid fa-camera"></i> Camera Capture</button>
+                </div>
+
+                <div class="tab-content">
+                    <!-- Upload Area -->
+                    <div class="input-area active" id="area-upload">
+                        <div class="drop-zone" id="drop-zone">
+                            <i class="fa-solid fa-file-arrow-up display-icon"></i>
+                            <h3>Drag & Drop</h3>
+                            <p>or <span class="browse-link">browse</span> to select an image</p>
+                            <input type="file" id="file-input" accept="image/*" hidden>
+                        </div>
+                    </div>
+
+                    <!-- Camera Area -->
+                    <div class="input-area" id="area-camera">
+                        <div class="camera-wrapper">
+                            <video id="camera-feed" autoplay playsinline></video>
+                            <button class="btn capture-btn" id="capture-btn"><i class="fa-solid fa-camera"></i> Capture</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Preview Area -->
+                <div class="preview-area" id="preview-area" style="display: none;">
+                    <h3>Image Preview</h3>
+                    <div class="preview-box">
+                        <img id="image-preview" src="" alt="Preview">
+                        <button class="btn-icon clear-btn" id="clear-btn" title="Remove Image"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                    <button class="btn primary-btn predict-btn" id="predict-btn">
+                        <i class="fa-solid fa-microchip"></i> Detect Disease
+                    </button>
+                </div>
+
+                <!-- Loading State -->
+                <div class="loading-area" id="loading-area" style="display: none;">
+                    <div class="spinner"></div>
+                    <p class="loading-text">Analyzing image using ResNet50...</p>
+                </div>
+            </div>
+
+            <!-- Right Column: Results Dashboard -->
+            <div class="result-panel panel-card">
+                <div class="result-card default-state" id="result-placeholder">
+                    <i class="fa-solid fa-microscope placeholder-icon"></i>
+                    <h2>No Image Analyzed</h2>
+                    <p>Upload an image or use the camera to see the prediction results here.</p>
+                </div>
+
+                <div class="result-card result-state" id="result-content" style="display: none;">
+                    <div class="result-header">
+                        <h2>Prediction Result</h2>
+                        <span class="status-badge"><i class="fa-solid fa-check-circle"></i> Analysis Complete</span>
+                    </div>
+
+                    <div class="prediction-highlight">
+                        <h3 id="disease-name" class="disease-title">Disease Name</h3>
+                        <div class="confidence-container">
+                            <div class="confidence-header">
+                                <span>Confidence</span>
+                                <span id="confidence-text">0%</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="confidence-fill" style="width: 0%;"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="disease-info">
+                        <div class="info-item">
+                            <div class="info-icon cause-icon"><i class="fa-solid fa-virus"></i></div>
+                            <div class="info-text">
+                                <h4>Cause</h4>
+                                <p id="cause-text">Loading...</p>
+                            </div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-icon treatment-icon"><i class="fa-solid fa-kit-medical"></i></div>
+                            <div class="info-text">
+                                <h4>Treatment</h4>
+                                <p id="treatment-text">Loading...</p>
+                            </div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-icon prevention-icon"><i class="fa-solid fa-shield-virus"></i></div>
+                            <div class="info-text">
+                                <h4>Prevention</h4>
+                                <p id="prevention-text">Loading...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
